@@ -1,0 +1,31 @@
+# OS files
+.DS_Store
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node artifacts
+node_modules/
+frontend/.next/
+frontend/.turbo/
+frontend/.vercel/
+
+# Build/output
+dist/
+build/
+backend/recordings/*
+!backend/recordings/.gitkeep
+archive/
+
+# Environment files
+.env
+.env.*
+!.env.example
+frontend/.env.local

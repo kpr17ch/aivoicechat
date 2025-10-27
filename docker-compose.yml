@@ -1,0 +1,49 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: voice-assistant-backend
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set in .env}
+      OPENAI_REALTIME_URL: ${OPENAI_REALTIME_URL:-https://api.openai.com/v1/realtime?model=gpt-realtime-mini}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/recordings:/app/recordings
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: voice-assistant-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8000/api/v1
+      NEXT_PUBLIC_WEB_SOCKET_URL: ws://backend:8000/ws
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: voice-assistant-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: assistants
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg-data:
