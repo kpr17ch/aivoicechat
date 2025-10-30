@@ -25,7 +25,7 @@ import {
 
 const navigation = [
   {
-    name: 'Dashboard',
+    name: 'Startseite',
     href: '/',
     icon: Home,
     disabled: false,
@@ -37,15 +37,15 @@ const navigation = [
     disabled: false,
   },
   {
-    name: 'Telefonnummern',
-    href: '/phone-numbers',
-    icon: Phone,
-    disabled: true,
-  },
-  {
     name: 'Analytics',
     href: '/analytics',
     icon: BarChart3,
+    disabled: false,
+  },
+  {
+    name: 'Telefonnummern',
+    href: '/phone-numbers',
+    icon: Phone,
     disabled: true,
   },
   {
