@@ -3,11 +3,11 @@
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 
-interface PlatformLayoutProps {
+export default function PlatformLayout({
+  children,
+}: {
   children: React.ReactNode;
-}
-
-export function PlatformLayout({ children }: PlatformLayoutProps) {
+}) {
   return (
     <SidebarProvider>
       <AppSidebar />
