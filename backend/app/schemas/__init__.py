@@ -6,6 +6,12 @@ from app.schemas.assistant import (
     AssistantSettingsResponse,
     AssistantSettingsUpdate,
 )
+from app.schemas.conversation import (
+    ConversationDetail,
+    ConversationEntry,
+    ConversationListResponse,
+    ConversationSummary,
+)
 from app.schemas.instruction_template import InstructionTemplateResponse
 
 __all__ = [
@@ -14,4 +20,8 @@ __all__ = [
     "AssistantSettingsUpdate",
     "AssistantSettingsResponse",
     "InstructionTemplateResponse",
+    "ConversationEntry",
+    "ConversationSummary",
+    "ConversationDetail",
+    "ConversationListResponse",
 ]

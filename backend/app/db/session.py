@@ -7,6 +7,7 @@ from sqlmodel import SQLModel
 
 from app.core.config import get_settings
 from app.models import AssistantSettings  # noqa: F401
+from app.models import ConversationSession  # noqa: F401
 from app.models import InstructionTemplate  # noqa: F401
 
 settings = get_settings()

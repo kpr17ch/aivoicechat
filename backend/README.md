@@ -53,6 +53,9 @@ and adjust the values you need:
 - `GET /api/v1/assistant/templates` – list instruction templates
 - `GET /api/v1/assistant/voices` – list available realtime voices
 - `GET /api/v1/settings/` – returns voice/instructions/greeting for realtime bridge
+- `GET /api/v1/conversations` – paginated list of stored conversations
+- `GET /api/v1/conversations/{id}` – detail view with full transcript
+- `GET /api/v1/conversations/{id}/download?format=txt|json` – download transcript artifact
 
 ## Docker Compose
 

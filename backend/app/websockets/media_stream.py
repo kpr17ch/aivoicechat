@@ -1,6 +1,7 @@
 import json
 import base64
 import asyncio
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from typing import Any
@@ -11,6 +12,7 @@ from fastapi.websockets import WebSocketDisconnect
 
 from app.core.config import get_settings
 from app.core.twilio_logging import log_event, format_openai_event
+from app.services import upsert_conversation_snapshot
 from app.services.assistant_service import get_assistant_settings
 from app.services.openai_service import initialize_session
 from app.services.audio_service import finalize_audio_segment, decode_audio_chunk
@@ -99,6 +101,7 @@ async def handle_media_stream(websocket: WebSocket):
         last_user_normalized: str | None = None
         last_assistant_text: str | None = None
         last_assistant_normalized: str | None = None
+        conversation_started_at: datetime | None = None
 
         stream_recording_dir: Path | None = None
         current_audio_buffer = bytearray()
@@ -192,7 +195,7 @@ async def handle_media_stream(websocket: WebSocket):
             return snapshot, text_updated
 
         async def persist_transcript(state: str, announce: bool = False) -> None:
-            nonlocal transcript_file_path
+            nonlocal transcript_file_path, conversation_started_at
 
             if stream_sid is None:
                 return
@@ -203,12 +206,37 @@ async def handle_media_stream(websocket: WebSocket):
             async with transcript_lock:
                 entries_copy = [dict(entry) for entry in transcript_entries]
 
+            def parse_timestamp(value: str | None) -> datetime | None:
+                if not value:
+                    return None
+                cleaned = value
+                if cleaned.endswith("Z"):
+                    cleaned = cleaned[:-1] + "+00:00"
+                try:
+                    return datetime.fromisoformat(cleaned)
+                except ValueError:
+                    return None
+
             payload = {
                 "stream_sid": stream_sid,
                 "state": state,
                 "updated_at": current_timestamp(),
                 "entries": entries_copy,
             }
+
+            readable_path = transcript_file_path.with_suffix(".txt")
+            lines = [
+                f"# Transcript for {stream_sid}",
+                f"State: {state}",
+                f"Updated: {payload['updated_at']}",
+                "",
+            ]
+            for entry in entries_copy:
+                role = (entry.get("role") or "unknown").upper()
+                timestamp = entry.get("timestamp", "")
+                text_value = entry.get("text") or "[pending]"
+                lines.append(f"[{timestamp}] {role}: {text_value}")
+            transcript_text_blob = "\n".join(lines) + "\n"
 
             try:
                 transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -217,19 +245,7 @@ async def handle_media_stream(websocket: WebSocket):
                     encoding="utf-8",
                 )
 
-                readable_path = transcript_file_path.with_suffix(".txt")
-                lines = [
-                    f"# Transcript for {stream_sid}",
-                    f"State: {state}",
-                    f"Updated: {payload['updated_at']}",
-                    "",
-                ]
-                for entry in entries_copy:
-                    role = (entry.get("role") or "unknown").upper()
-                    timestamp = entry.get("timestamp", "")
-                    text_value = entry.get("text") or "[pending]"
-                    lines.append(f"[{timestamp}] {role}: {text_value}")
-                readable_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                readable_path.write_text(transcript_text_blob, encoding="utf-8")
 
                 if announce:
                     log_event(
@@ -249,6 +265,71 @@ async def handle_media_stream(websocket: WebSocket):
                         "file_path": str(transcript_file_path) if transcript_file_path else "N/A",
                         "error": str(exc),
                         "state": state,
+                    },
+                    "ERROR",
+                )
+
+            phone_candidates: list[str] = []
+            for entry in entries_copy:
+                numeric_meta = (entry.get("metadata") or {}).get("numeric") or {}
+                for candidate in numeric_meta.get("valid_phone_candidates") or []:
+                    if candidate not in phone_candidates:
+                        phone_candidates.append(candidate)
+
+            if conversation_started_at is None:
+                first_timestamp = next(
+                    (entry.get("timestamp") for entry in entries_copy if entry.get("timestamp")),
+                    None,
+                )
+                parsed_start = parse_timestamp(first_timestamp)
+                if parsed_start:
+                    conversation_started_at = parsed_start
+
+            ended_at_dt = (
+                parse_timestamp(payload["updated_at"]) if state == "connection_closed" else None
+            )
+
+            turn_count = sum(
+                1
+                for entry in entries_copy
+                if entry.get("role") in {"user", "assistant"} and entry.get("text")
+            )
+
+            user_phone = phone_candidates[0] if phone_candidates else None
+
+            metadata_payload = {
+                "state": state,
+                "turn_count": turn_count,
+                "phone_candidates": phone_candidates,
+                "last_user_normalized": last_user_normalized,
+                "last_assistant_normalized": last_assistant_normalized,
+                "conversation_stats": deepcopy(conversation_stats),
+                "updated_at": payload["updated_at"],
+            }
+
+            try:
+                await upsert_conversation_snapshot(
+                    stream_sid=stream_sid,
+                    state=state,
+                    turn_count=turn_count,
+                    transcript_payload=payload,
+                    transcript_text=transcript_text_blob,
+                    json_path=str(transcript_file_path) if transcript_file_path else None,
+                    text_path=str(readable_path) if readable_path else None,
+                    started_at=conversation_started_at,
+                    ended_at=ended_at_dt,
+                    last_user_text=last_user_text,
+                    last_assistant_text=last_assistant_text,
+                    user_phone=user_phone,
+                    metadata=metadata_payload,
+                )
+            except Exception as exc:
+                log_event(
+                    "transcript.persist_error",
+                    {
+                        "stream_sid": stream_sid,
+                        "state": state,
+                        "error": str(exc),
                     },
                     "ERROR",
                 )
@@ -289,6 +370,7 @@ async def handle_media_stream(websocket: WebSocket):
                             "status": "Twilio media stream active",
                             "audio_recording": "enabled" if settings.enable_audio_recording else "disabled"
                         }, "SUCCESS")
+                        conversation_started_at = datetime.utcnow()
                         if settings.enable_audio_recording:
                             recordings_base = settings.recordings_path
                             stream_recording_dir = recordings_base / stream_sid
