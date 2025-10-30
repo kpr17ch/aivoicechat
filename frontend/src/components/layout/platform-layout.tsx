@@ -1,7 +1,7 @@
 'use client';
 
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
-import { AppSidebar } from './app-sidebar';
+import { AppSidebar } from '@/components/app-sidebar';
 
 interface PlatformLayoutProps {
   children: React.ReactNode;

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { Bot, Phone, BarChart3, Settings, User } from 'lucide-react';
+import { Bot, Phone, BarChart3, Settings, User, Home } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const navigation = [
+  {
+    name: 'Dashboard',
+    href: '/',
+    icon: Home,
+    disabled: false,
+  },
   {
     name: 'Assistant',
     href: '/assistant',
