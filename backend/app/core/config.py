@@ -70,6 +70,18 @@ class Settings(BaseSettings):
         """Return logging configuration derived from env."""
         return LoggingConfig(level=self.log_level.upper())
 
+    @property
+    def recordings_path(self) -> Path:
+        """Return absolute path for audio recordings."""
+        recordings = Path(self.recordings_dir)
+        return recordings if recordings.is_absolute() else BACKEND_DIR / recordings
+
+    @property
+    def transcripts_path(self) -> Path:
+        """Return absolute path for conversation transcripts."""
+        transcripts = Path(self.transcripts_dir)
+        return transcripts if transcripts.is_absolute() else BACKEND_DIR / transcripts
+
     def assistant_payload(self) -> dict[str, Any]:
         """Return default assistant settings exposed via API."""
         return {

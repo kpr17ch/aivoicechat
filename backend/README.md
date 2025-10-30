@@ -10,6 +10,7 @@ provides APIs for the frontend dashboard and the realtime Twilio bridge.
 - REST endpoints for fetching/updating the active assistant, listing templates and available
   voices
 - Lightweight defaults endpoint consumed by the realtime gateway
+- Complete conversation transcripts as JSON/TXT in `backend/transcripts/`
 
 ## Tooling
 
@@ -22,6 +23,10 @@ Install dependencies locally:
 ```bash
 pip install -r requirements.txt
 ```
+
+> Tipp: Im Projekt-Root steht mit `npm start` ein kompletter Dev-Launcher bereit,
+> der automatisch ein Virtualenv erstellt, die Datenbank vorbereitet und das
+> Backend (plus Frontend) startet.
 
 Run the API during development:
 

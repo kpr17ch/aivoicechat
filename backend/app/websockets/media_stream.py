@@ -29,7 +29,7 @@ SHOW_TIMING_MATH = False
 
 
 async def handle_media_stream(websocket: WebSocket):
-    log_event("WebSocket Connection", {"status": "Client connected"}, "SUCCESS")
+    log_event("websocket.connected", {"status": "client connected"}, "SUCCESS")
     await websocket.accept()
 
     async with AsyncSessionMaker() as session:
@@ -87,14 +87,15 @@ async def handle_media_stream(websocket: WebSocket):
             'total_output_text_tokens': 0,
             'total_output_audio_tokens': 0,
             'total_cached_tokens': 0,
-            'last_response_tokens': {}
         }
 
         transcript_entries: list[dict[str, Any]] = []
         transcript_index_by_item: dict[str, int] = {}
         transcript_lock = asyncio.Lock()
-        transcripts_base = Path(settings.transcripts_dir)
+        transcripts_base = settings.transcripts_path
         transcript_file_path: Path | None = None
+        last_user_text: str | None = None
+        last_assistant_text: str | None = None
 
         stream_recording_dir: Path | None = None
         current_audio_buffer = bytearray()
@@ -135,7 +136,8 @@ async def handle_media_stream(websocket: WebSocket):
             item_id: str | None = None,
             text: str | None = None,
             metadata: dict[str, Any] | None = None,
-        ) -> dict[str, Any]:
+        ) -> tuple[dict[str, Any], bool]:
+            text_updated = False
             async with transcript_lock:
                 if item_id and item_id in transcript_index_by_item:
                     entry = transcript_entries[transcript_index_by_item[item_id]]
@@ -145,6 +147,8 @@ async def handle_media_stream(websocket: WebSocket):
                     if not entry.get("role"):
                         entry["role"] = role
                     if text is not None:
+                        if entry.get("text") != text:
+                            text_updated = True
                         entry["text"] = text
                         entry["status"] = "completed"
                         entry["updated_at"] = current_timestamp()
@@ -168,9 +172,10 @@ async def handle_media_stream(websocket: WebSocket):
                     if item_id:
                         transcript_index_by_item[item_id] = len(transcript_entries) - 1
                     snapshot = dict(entry)
-                return snapshot
+                    text_updated = text is not None
+            return snapshot, text_updated
 
-        async def persist_transcript(end_reason: str) -> None:
+        async def persist_transcript(state: str, announce: bool = False) -> None:
             nonlocal transcript_file_path
 
             if stream_sid is None:
@@ -184,23 +189,53 @@ async def handle_media_stream(websocket: WebSocket):
 
             payload = {
                 "stream_sid": stream_sid,
-                "end_reason": end_reason,
-                "ended_at": current_timestamp(),
+                "state": state,
+                "updated_at": current_timestamp(),
                 "entries": entries_copy,
             }
 
             try:
                 transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_file_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2))
-                log_event("Transcript Saved", {
-                    "file_path": str(transcript_file_path),
-                    "entries": len(entries_copy)
-                }, "SUCCESS")
+                transcript_file_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
+                readable_path = transcript_file_path.with_suffix(".txt")
+                lines = [
+                    f"# Transcript for {stream_sid}",
+                    f"State: {state}",
+                    f"Updated: {payload['updated_at']}",
+                    "",
+                ]
+                for entry in entries_copy:
+                    role = (entry.get("role") or "unknown").upper()
+                    timestamp = entry.get("timestamp", "")
+                    text_value = entry.get("text") or "[pending]"
+                    lines.append(f"[{timestamp}] {role}: {text_value}")
+                readable_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+                if announce:
+                    log_event(
+                        "transcript.saved",
+                        {
+                            "json_path": str(transcript_file_path),
+                            "text_path": str(readable_path),
+                            "entries": len(entries_copy),
+                            "state": state,
+                        },
+                        "SUCCESS",
+                    )
             except Exception as exc:
-                log_event("Transcript Save Failed", {
-                    "file_path": str(transcript_file_path),
-                    "error": str(exc)
-                }, "ERROR")
+                log_event(
+                    "transcript.error",
+                    {
+                        "file_path": str(transcript_file_path) if transcript_file_path else "N/A",
+                        "error": str(exc),
+                        "state": state,
+                    },
+                    "ERROR",
+                )
 
         async def finalize_segment(reason: str) -> None:
             nonlocal audio_segment_index
@@ -214,7 +249,7 @@ async def handle_media_stream(websocket: WebSocket):
                 )
 
         async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp, stream_recording_dir, audio_segment_index, transcript_file_path
+            nonlocal stream_sid, latest_media_timestamp, stream_recording_dir, audio_segment_index, transcript_file_path, last_user_text, last_assistant_text
             try:
                 async for message in websocket.iter_text():
                     data = json.loads(message)
@@ -233,13 +268,13 @@ async def handle_media_stream(websocket: WebSocket):
                                     current_audio_buffer.extend(raw_chunk)
                     elif data['event'] == 'start':
                         stream_sid = data['start']['streamSid']
-                        log_event("Stream Started", {
+                        log_event("stream.started", {
                             "stream_sid": stream_sid,
                             "status": "Twilio media stream active",
                             "audio_recording": "enabled" if settings.enable_audio_recording else "disabled"
                         }, "SUCCESS")
                         if settings.enable_audio_recording:
-                            recordings_base = Path(settings.recordings_dir)
+                            recordings_base = settings.recordings_path
                             stream_recording_dir = recordings_base / stream_sid
                             stream_recording_dir.mkdir(parents=True, exist_ok=True)
                             async with audio_buffer_lock:
@@ -250,11 +285,14 @@ async def handle_media_stream(websocket: WebSocket):
                         async with transcript_lock:
                             transcript_entries.clear()
                             transcript_index_by_item.clear()
+                        last_user_text = None
+                        last_assistant_text = None
                         transcripts_base.mkdir(parents=True, exist_ok=True)
                         transcript_file_path = transcripts_base / f"{stream_sid}.json"
-                        log_event("Transcript Tracking", {
+                        await persist_transcript("initialized")
+                        log_event("transcript.tracking", {
                             "stream_sid": stream_sid,
-                            "file_path": str(transcript_file_path)
+                            "json_path": str(transcript_file_path)
                         }, "INFO")
                         response_start_timestamp_twilio = None
                         latest_media_timestamp = 0
@@ -263,12 +301,12 @@ async def handle_media_stream(websocket: WebSocket):
                         if mark_queue:
                             mark_queue.pop(0)
             except WebSocketDisconnect:
-                log_event("WebSocket Disconnection", {"status": "Client disconnected"}, "WARNING")
+                log_event("websocket.disconnected", {"status": "client disconnected"}, "WARNING")
                 if openai_ws.state.name == 'OPEN':
                     await openai_ws.close()
 
         async def send_to_twilio():
-            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, conversation_stats
+            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, conversation_stats, last_user_text, last_assistant_text
 
             try:
                 async for openai_message in openai_ws:
@@ -287,67 +325,131 @@ async def handle_media_stream(websocket: WebSocket):
                             ]
                         }
                         text_value = extract_text_from_content(content)
-                        await upsert_transcript(
+                        snapshot, text_updated = await upsert_transcript(
                             role,
                             event_type,
                             item_id=item_id,
                             text=text_value,
                             metadata=metadata
                         )
-                        if role == 'user' and text_value:
-                            log_event("User Transcript", {
-                                "item_id": item_id or "N/A",
-                                "text": text_value
-                            }, "INFO")
-                        elif role == 'assistant' and text_value:
-                            log_event("Assistant Transcript", {
-                                "item_id": item_id or "N/A",
-                                "text": text_value
-                            }, "INFO")
+                        if text_updated:
+                            await persist_transcript("in_progress")
+                            if role == 'user':
+                                last_user_text = snapshot.get("text") or last_user_text
+                                log_event(
+                                    "conversation.user",
+                                    {
+                                        "item_id": item_id or "N/A",
+                                        "text": snapshot.get("text") or "",
+                                        "sources": snapshot.get("sources"),
+                                        "metadata": snapshot.get("metadata"),
+                                        "status": snapshot.get("status"),
+                                    },
+                                )
+                            elif role == 'assistant':
+                                last_assistant_text = snapshot.get("text") or last_assistant_text
+                                log_event(
+                                    "conversation.assistant",
+                                    {
+                                        "item_id": item_id or "N/A",
+                                        "text": snapshot.get("text") or "",
+                                        "sources": snapshot.get("sources"),
+                                        "metadata": snapshot.get("metadata"),
+                                        "status": snapshot.get("status"),
+                                    },
+                                )
                     elif event_type == 'conversation.item.input_audio_transcription.completed':
                         item_id = response.get('item_id')
                         transcript_text = response.get('transcript')
-                        await upsert_transcript(
+                        snapshot, text_updated = await upsert_transcript(
                             'user',
                             event_type,
                             item_id=item_id,
                             text=transcript_text
                         )
-                        log_event("User Transcript", {
-                            "item_id": item_id or "N/A",
-                            "text": transcript_text or ""
-                        }, "SUCCESS")
+                        if text_updated:
+                            last_user_text = snapshot.get("text") or last_user_text
+                            await persist_transcript("in_progress")
+                            log_event(
+                                "conversation.user",
+                                {
+                                    "item_id": item_id or "N/A",
+                                    "text": snapshot.get("text") or "",
+                                    "sources": snapshot.get("sources"),
+                                    "status": snapshot.get("status"),
+                                },
+                                "SUCCESS",
+                            )
                     elif event_type == 'conversation.item.input_audio_transcription.failed':
                         item_id = response.get('item_id')
                         error_info = response.get('error', {})
                         failure_text = "[Transkription fehlgeschlagen]"
-                        await upsert_transcript(
+                        snapshot, text_updated = await upsert_transcript(
                             'user',
                             event_type,
                             item_id=item_id,
                             text=failure_text,
                             metadata={"error": error_info}
                         )
-                        log_event("User Transcript Failed", {
-                            "item_id": item_id or "N/A",
-                            "error": error_info
-                        }, "ERROR")
+                        if text_updated:
+                            await persist_transcript("in_progress")
+                        log_event(
+                            "conversation.user.error",
+                            {
+                                "item_id": item_id or "N/A",
+                                "error": error_info,
+                                "sources": snapshot.get("sources"),
+                            },
+                            "ERROR",
+                        )
 
                     if event_type in LOG_EVENT_TYPES:
-                        formatted = format_openai_event(response)
+                        event_name, event_payload, event_level = format_openai_event(response)
 
                         if event_type == 'response.done':
+                            resp_data = response.get('response', {}) or {}
+                            output_items = resp_data.get('output', []) or []
+                            for item in output_items:
+                                if item.get('type') == 'message' and item.get('role') == 'assistant':
+                                    item_id = item.get('id')
+                                    content = item.get('content', [])
+                                    assistant_text = extract_text_from_content(content)
+                                    metadata = {
+                                        "status": item.get('status'),
+                                        "content_types": [
+                                            part.get('type') for part in content if isinstance(part, dict)
+                                        ]
+                                    }
+                                    if assistant_text:
+                                        snapshot, text_updated = await upsert_transcript(
+                                            'assistant',
+                                            event_type,
+                                            item_id=item_id,
+                                            text=assistant_text,
+                                            metadata=metadata
+                                        )
+                                        if text_updated:
+                                            last_assistant_text = snapshot.get("text") or last_assistant_text
+                                            await persist_transcript("in_progress")
+                                            log_event(
+                                                "conversation.assistant",
+                                                {
+                                                    "item_id": item_id or "N/A",
+                                                    "text": snapshot.get("text") or "",
+                                                    "sources": snapshot.get("sources"),
+                                                    "metadata": snapshot.get("metadata"),
+                                                    "status": snapshot.get("status"),
+                                                },
+                                            )
+
                             conversation_stats['turn_number'] += 1
 
-                            resp_data = response.get('response', {})
-                            usage = resp_data.get('usage', {})
-
+                            usage = resp_data.get('usage', {}) or {}
                             current_total = usage.get('total_tokens', 0)
                             current_input = usage.get('input_tokens', 0)
                             current_output = usage.get('output_tokens', 0)
-
-                            input_details = usage.get('input_token_details', {})
-                            output_details = usage.get('output_token_details', {})
+                            input_details = usage.get('input_token_details', {}) or {}
+                            output_details = usage.get('output_token_details', {}) or {}
 
                             current_input_text = input_details.get('text_tokens', 0)
                             current_input_audio = input_details.get('audio_tokens', 0)
@@ -374,7 +476,7 @@ async def handle_media_stream(websocket: WebSocket):
                             conversation_stats['total_output_audio_tokens'] = current_output_audio
                             conversation_stats['total_cached_tokens'] = current_cached
 
-                            formatted['turn_stats'] = {
+                            turn_stats = {
                                 'turn_number': conversation_stats['turn_number'],
                                 'this_turn': {
                                     'total': turn_total,
@@ -398,34 +500,24 @@ async def handle_media_stream(websocket: WebSocket):
                                 }
                             }
 
-                        log_event(f"OpenAI Event: {formatted['event_type']}", formatted)
+                            event_payload['turn'] = turn_stats
+                            event_payload['latest_user_text'] = last_user_text
+                            event_payload['latest_assistant_text'] = last_assistant_text
 
-                        if event_type == 'response.done':
-                            resp_data = response.get('response', {})
-                            output_items = resp_data.get('output', [])
-                            for item in output_items:
-                                if item.get('type') == 'message' and item.get('role') == 'assistant':
-                                    item_id = item.get('id')
-                                    content = item.get('content', [])
-                                    assistant_text = extract_text_from_content(content)
-                                    metadata = {
-                                        "status": item.get('status'),
-                                        "content_types": [
-                                            part.get('type') for part in content if isinstance(part, dict)
-                                        ]
-                                    }
-                                    if assistant_text:
-                                        await upsert_transcript(
-                                            'assistant',
-                                            event_type,
-                                            item_id=item_id,
-                                            text=assistant_text,
-                                            metadata=metadata
-                                        )
-                                        log_event("Assistant Transcript", {
-                                            "item_id": item_id or "N/A",
-                                            "text": assistant_text
-                                        }, "INFO")
+                            log_event(event_name, event_payload, event_level)
+                            log_event(
+                                "conversation.turn",
+                                {
+                                    "turn": turn_stats['turn_number'],
+                                    "response_id": event_payload.get("response_id"),
+                                    "user_text": last_user_text,
+                                    "assistant_text": last_assistant_text,
+                                    "tokens": turn_stats['this_turn'],
+                                    "totals": turn_stats['conversation_total'],
+                                },
+                            )
+                        else:
+                            log_event(event_name, event_payload, event_level)
 
                     if event_type in ['response.output_audio.delta', 'response.audio.delta'] and 'delta' in response:
                         if LOG_AUDIO_CHUNKS:
@@ -434,7 +526,7 @@ async def handle_media_stream(websocket: WebSocket):
                                 'item_id': response.get('item_id', 'N/A'),
                                 'chunk_size': f"{len(response.get('delta', ''))} bytes"
                             }
-                            log_event("Audio Chunk Streaming", chunk_info, "DEBUG")
+                            log_event("audio.chunk", chunk_info, "DEBUG")
 
                         audio_payload = base64.b64encode(base64.b64decode(response['delta'])).decode('utf-8')
                         audio_delta = {
@@ -450,7 +542,7 @@ async def handle_media_stream(websocket: WebSocket):
                             response_start_timestamp_twilio = latest_media_timestamp
                             last_assistant_item = response["item_id"]
                             if SHOW_TIMING_MATH:
-                                log_event("Response Timing", {
+                                log_event("assistant.timing", {
                                     "start_timestamp": f"{response_start_timestamp_twilio}ms",
                                     "item_id": last_assistant_item
                                 }, "DEBUG")
@@ -458,12 +550,12 @@ async def handle_media_stream(websocket: WebSocket):
                         await send_mark(websocket, stream_sid)
 
                     if event_type == 'input_audio_buffer.speech_started':
-                        log_event("User Speech Started", {
+                        log_event("user.speech_started", {
                             "audio_start_ms": response.get('audio_start_ms', 'N/A'),
                             "item_id": response.get('item_id', 'N/A')
                         }, "INFO")
                         if last_assistant_item:
-                            log_event("Interruption", {
+                            log_event("assistant.interrupted", {
                                 "action": "Interrupting assistant response",
                                 "interrupted_item_id": last_assistant_item
                             }, "WARNING")
@@ -471,7 +563,7 @@ async def handle_media_stream(websocket: WebSocket):
                     elif event_type == 'input_audio_buffer.committed':
                         await finalize_segment("input_audio_buffer.committed")
             except Exception as e:
-                log_event("Stream Error", {"error": str(e), "type": type(e).__name__}, "ERROR")
+                log_event("stream.error", {"error": str(e), "type": type(e).__name__}, "ERROR")
 
         async def handle_speech_started_event():
             nonlocal response_start_timestamp_twilio, last_assistant_item
@@ -480,7 +572,7 @@ async def handle_media_stream(websocket: WebSocket):
                 elapsed_time = latest_media_timestamp - response_start_timestamp_twilio
 
                 if last_assistant_item:
-                    log_event("Response Truncation", {
+                    log_event("assistant.truncated", {
                         "item_id": last_assistant_item,
                         "elapsed_time": f"{elapsed_time}ms",
                         "action": "Truncating assistant response due to user interruption"
@@ -517,4 +609,4 @@ async def handle_media_stream(websocket: WebSocket):
             await asyncio.gather(receive_from_twilio(), send_to_twilio())
         finally:
             await finalize_segment("connection_closed")
-            await persist_transcript("connection_closed")
+            await persist_transcript("connection_closed", announce=True)

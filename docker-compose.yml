@@ -7,6 +7,7 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set in .env}
       OPENAI_REALTIME_URL: ${OPENAI_REALTIME_URL:-https://api.openai.com/v1/realtime?model=gpt-realtime-mini}
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/assistants
     ports:
       - "8000:8000"
     depends_on:

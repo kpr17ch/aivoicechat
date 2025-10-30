@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from structlog.stdlib import BoundLogger, LoggerFactory
+from structlog.stdlib import LoggerFactory
 
 from app.api.router import api_router
 from app.api.v1 import twilio
@@ -23,24 +23,24 @@ settings = get_settings()
 
 def configure_logging() -> None:
     """Configure structlog with standard logging integration."""
-    log_level = getattr(logging, settings.logging.level.upper(), logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format="%(message)s",
+    log_level_name = settings.logging.level.upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    logging.basicConfig(level=log_level, format="%(message)s")
+
+    renderer = (
+        structlog.processors.JSONRenderer()
+        if settings.logging.json_logs
+        else structlog.processors.KeyValueRenderer(key_order=["event", "message"], sort_keys=True)
     )
+
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
-            (
-                structlog.processors.JSONRenderer()
-                if settings.logging.json_logs
-                else structlog.dev.ConsoleRenderer()
-            ),
+            renderer,
         ],
-        wrapper_class=BoundLogger,
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),
         logger_factory=LoggerFactory(),
         cache_logger_on_first_use=True,
     )
