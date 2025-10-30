@@ -29,3 +29,5 @@ Hinweise
 - `backend/scripts/start_local.sh` akzeptiert optional `PYTHON_BIN=/pfad/zu/python`.
 - Für spezielle Migrationen oder Daten-Seeding können wie gewohnt Alembic- oder SQLModel-Tools verwendet werden.
 - Gesprächstranskripte landen automatisch als `.json` und `.txt` unter `backend/transcripts/<stream>.{json,txt}`; die Logs zeigen dazu `conversation.user`/`conversation.assistant` mit vollständigem Text und Turn-Statistiken.
+- Sprachmodell-Biasing und Numeric-Normalisierung sorgen dafür, dass Telefonnummern/Bestellnummern in deutscher Sprache zuverlässiger erkannt, normalisiert (`+49…`) und validiert werden.
+- Für Azure-Realtime kannst du `TRANSCRIPTION_PROMPT` / `TRANSCRIPTION_LANGUAGE` setzen; Standard ist ein deutscher Bias-Prompt plus Sprache `de` für korrekte +49-Vorwahlen.

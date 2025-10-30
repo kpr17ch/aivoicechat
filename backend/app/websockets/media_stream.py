@@ -14,6 +14,7 @@ from app.core.twilio_logging import log_event, format_openai_event
 from app.services.assistant_service import get_assistant_settings
 from app.services.openai_service import initialize_session
 from app.services.audio_service import finalize_audio_segment, decode_audio_chunk
+from app.utils.numeric import normalize_numeric_phrase, is_plausible_german_phone
 from app.db.session import AsyncSessionMaker
 
 settings = get_settings()
@@ -95,7 +96,9 @@ async def handle_media_stream(websocket: WebSocket):
         transcripts_base = settings.transcripts_path
         transcript_file_path: Path | None = None
         last_user_text: str | None = None
+        last_user_normalized: str | None = None
         last_assistant_text: str | None = None
+        last_assistant_normalized: str | None = None
 
         stream_recording_dir: Path | None = None
         current_audio_buffer = bytearray()
@@ -173,6 +176,19 @@ async def handle_media_stream(websocket: WebSocket):
                         transcript_index_by_item[item_id] = len(transcript_entries) - 1
                     snapshot = dict(entry)
                     text_updated = text is not None
+
+                analysis = normalize_numeric_phrase(entry.get("text"))
+                entry["normalized_text"] = analysis.normalized
+                if metadata is None:
+                    metadata = {}
+                entry.setdefault("metadata", {})
+                numeric_meta = entry["metadata"].setdefault("numeric", {})
+                numeric_meta["normalized"] = analysis.normalized
+                numeric_meta["phone_candidates"] = analysis.phone_candidates
+                numeric_meta["valid_phone_candidates"] = [
+                    number for number in analysis.phone_candidates if is_plausible_german_phone(number)
+                ]
+                snapshot = dict(entry)
             return snapshot, text_updated
 
         async def persist_transcript(state: str, announce: bool = False) -> None:
@@ -249,7 +265,7 @@ async def handle_media_stream(websocket: WebSocket):
                 )
 
         async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp, stream_recording_dir, audio_segment_index, transcript_file_path, last_user_text, last_assistant_text
+            nonlocal stream_sid, latest_media_timestamp, stream_recording_dir, audio_segment_index, transcript_file_path, last_user_text, last_user_normalized, last_assistant_text, last_assistant_normalized
             try:
                 async for message in websocket.iter_text():
                     data = json.loads(message)
@@ -286,7 +302,9 @@ async def handle_media_stream(websocket: WebSocket):
                             transcript_entries.clear()
                             transcript_index_by_item.clear()
                         last_user_text = None
+                        last_user_normalized = None
                         last_assistant_text = None
+                        last_assistant_normalized = None
                         transcripts_base.mkdir(parents=True, exist_ok=True)
                         transcript_file_path = transcripts_base / f"{stream_sid}.json"
                         await persist_transcript("initialized")
@@ -306,7 +324,7 @@ async def handle_media_stream(websocket: WebSocket):
                     await openai_ws.close()
 
         async def send_to_twilio():
-            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, conversation_stats, last_user_text, last_assistant_text
+            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, conversation_stats, last_user_text, last_user_normalized, last_assistant_text, last_assistant_normalized
 
             try:
                 async for openai_message in openai_ws:
@@ -334,25 +352,53 @@ async def handle_media_stream(websocket: WebSocket):
                         )
                         if text_updated:
                             await persist_transcript("in_progress")
+                            numeric_meta = (snapshot.get("metadata") or {}).get("numeric", {})
+                            normalized_value = snapshot.get("normalized_text") or numeric_meta.get("normalized")
                             if role == 'user':
                                 last_user_text = snapshot.get("text") or last_user_text
+                                if normalized_value:
+                                    last_user_normalized = normalized_value
                                 log_event(
                                     "conversation.user",
                                     {
                                         "item_id": item_id or "N/A",
                                         "text": snapshot.get("text") or "",
+                                        "normalized": normalized_value or "",
                                         "sources": snapshot.get("sources"),
                                         "metadata": snapshot.get("metadata"),
                                         "status": snapshot.get("status"),
                                     },
                                 )
+                                if numeric_meta.get("phone_candidates"):
+                                    log_event(
+                                        "conversation.phone.detected",
+                                        {
+                                            "item_id": item_id or "N/A",
+                                            "candidates": numeric_meta.get("phone_candidates"),
+                                            "valid": numeric_meta.get("valid_phone_candidates"),
+                                            "normalized": normalized_value or "",
+                                        },
+                                    )
+                                    if not numeric_meta.get("valid_phone_candidates"):
+                                        log_event(
+                                            "conversation.phone.suspect",
+                                            {
+                                                "item_id": item_id or "N/A",
+                                                "reason": "vorwahl_unplausibel",
+                                                "candidates": numeric_meta.get("phone_candidates"),
+                                            },
+                                            "WARNING",
+                                        )
                             elif role == 'assistant':
                                 last_assistant_text = snapshot.get("text") or last_assistant_text
+                                if normalized_value:
+                                    last_assistant_normalized = normalized_value
                                 log_event(
                                     "conversation.assistant",
                                     {
                                         "item_id": item_id or "N/A",
                                         "text": snapshot.get("text") or "",
+                                        "normalized": normalized_value or "",
                                         "sources": snapshot.get("sources"),
                                         "metadata": snapshot.get("metadata"),
                                         "status": snapshot.get("status"),
@@ -368,18 +414,43 @@ async def handle_media_stream(websocket: WebSocket):
                             text=transcript_text
                         )
                         if text_updated:
+                            numeric_meta = (snapshot.get("metadata") or {}).get("numeric", {})
+                            normalized_value = snapshot.get("normalized_text") or numeric_meta.get("normalized")
                             last_user_text = snapshot.get("text") or last_user_text
+                            if normalized_value:
+                                last_user_normalized = normalized_value
                             await persist_transcript("in_progress")
                             log_event(
                                 "conversation.user",
                                 {
                                     "item_id": item_id or "N/A",
                                     "text": snapshot.get("text") or "",
+                                    "normalized": normalized_value or "",
                                     "sources": snapshot.get("sources"),
                                     "status": snapshot.get("status"),
                                 },
                                 "SUCCESS",
                             )
+                            if numeric_meta.get("phone_candidates"):
+                                log_event(
+                                    "conversation.phone.detected",
+                                    {
+                                        "item_id": item_id or "N/A",
+                                        "candidates": numeric_meta.get("phone_candidates"),
+                                        "valid": numeric_meta.get("valid_phone_candidates"),
+                                        "normalized": normalized_value or "",
+                                    },
+                                )
+                                if not numeric_meta.get("valid_phone_candidates"):
+                                    log_event(
+                                        "conversation.phone.suspect",
+                                        {
+                                            "item_id": item_id or "N/A",
+                                            "reason": "vorwahl_unplausibel",
+                                            "candidates": numeric_meta.get("phone_candidates"),
+                                        },
+                                        "WARNING",
+                                    )
                     elif event_type == 'conversation.item.input_audio_transcription.failed':
                         item_id = response.get('item_id')
                         error_info = response.get('error', {})
@@ -511,7 +582,9 @@ async def handle_media_stream(websocket: WebSocket):
                                     "turn": turn_stats['turn_number'],
                                     "response_id": event_payload.get("response_id"),
                                     "user_text": last_user_text,
+                                    "user_normalized": last_user_normalized,
                                     "assistant_text": last_assistant_text,
+                                    "assistant_normalized": last_assistant_normalized,
                                     "tokens": turn_stats['this_turn'],
                                     "totals": turn_stats['conversation_total'],
                                 },

@@ -11,6 +11,8 @@ provides APIs for the frontend dashboard and the realtime Twilio bridge.
   voices
 - Lightweight defaults endpoint consumed by the realtime gateway
 - Complete conversation transcripts as JSON/TXT in `backend/transcripts/`
+- German speech biasing + numeric normalization for robust handling of Telefonnummern und Codes
+- Azure-Realtime unterstützt Bias-Prompts via `TRANSCRIPTION_PROMPT` und Sprache via `TRANSCRIPTION_LANGUAGE` (Default `de`).
 
 ## Tooling
 

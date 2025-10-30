@@ -4,7 +4,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Any, List
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     openai_realtime_url: str = "https://api.openai.com/v1/realtime?model=gpt-realtime-mini"
     openai_realtime_model: str = "gpt-realtime-mini"
     temperature: float = 0.8
-    openai_transcription_model: str | None = "whisper-1"
+    openai_transcription_model: str = "gpt-4o-mini-transcribe"
 
     enable_audio_recording: bool = False
     recordings_dir: str = "recordings"
@@ -46,6 +46,54 @@ class Settings(BaseSettings):
     gmail_email: str = "kaiperich@gmail.com"
     gmail_app_password: str | None = None
     enable_email_tool: bool = True
+    transcription_phrase_hints_raw: str | None = Field(
+        default=None, alias="TRANSCRIPTION_PHRASE_HINTS"
+    )
+    transcription_phrase_defaults: list[str] = Field(
+        default_factory=lambda: [
+            "+49",
+            "plus vier neun",
+            "null",
+            "eins",
+            "zwei",
+            "drei",
+            "vier",
+            "fünf",
+            "sechs",
+            "sieben",
+            "acht",
+            "neun",
+            "zwo",
+            "doppel null",
+            "doppel eins",
+            "doppel zwei",
+            "doppel drei",
+            "doppel vier",
+            "doppel fünf",
+            "doppel sechs",
+            "doppel sieben",
+            "doppel acht",
+            "doppel neun",
+            "Vorwahl",
+            "Rückrufnummer",
+            "Bestellnummer",
+            "Kundennummer",
+            "Buchstabe A",
+            "Buchstabe B",
+            "Buchstabe C",
+            "Buchstabe D",
+            "Buchstabe E",
+            "Buchstabe F",
+            "Buchstabe G",
+            "Buchstabe H",
+        ]
+    )
+    transcription_prompt_override: str | None = Field(
+        default=None, alias="TRANSCRIPTION_PROMPT"
+    )
+    transcription_language_override: str | None = Field(
+        default="de", alias="TRANSCRIPTION_LANGUAGE"
+    )
 
     model_config = SettingsConfigDict(
         env_file=(
@@ -69,6 +117,62 @@ class Settings(BaseSettings):
     def logging(self) -> LoggingConfig:
         """Return logging configuration derived from env."""
         return LoggingConfig(level=self.log_level.upper())
+
+    @property
+    def transcription_phrase_hints(self) -> list[str]:
+        """Return phrase hints for speech recognition."""
+        phrases: list[str] = []
+        if self.transcription_phrase_hints_raw:
+            separators = [",", ";", "\n"]
+            raw = self.transcription_phrase_hints_raw
+            for sep in separators:
+                raw = raw.replace(sep, "|")
+            phrases.extend([p.strip() for p in raw.split("|") if p.strip()])
+        if not phrases:
+            phrases = []
+        phrases.extend(self.transcription_phrase_defaults)
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for phrase in phrases:
+            key = phrase.lower()
+            if key not in seen:
+                seen.add(key)
+                ordered.append(phrase)
+        return ordered
+
+    @property
+    def transcription_language(self) -> str | None:
+        """Return language code used for speech transcription."""
+        language = self.transcription_language_override
+        return language.strip() if isinstance(language, str) and language.strip() else None
+
+    @property
+    def transcription_prompt(self) -> str | None:
+        """Return descriptive prompt for speech transcription biasing."""
+        base_prompt = None
+        if self.transcription_prompt_override and self.transcription_prompt_override.strip():
+            base_prompt = self.transcription_prompt_override.strip()
+        else:
+            base_prompt = (
+                "Es handelt sich um deutschsprachige Servicegespräche."
+                " Achte besonders auf Telefonnummern im Format '+49 …' oder '0 …'."
+                " Die Landesvorwahl ist 'plus vier neun', niemals 'plus neun vier'."
+                " Lies Ziffern einzeln vor (eins, zwei, drei …) und bestätige sie sorgfältig."
+                " Erkenne Begriffe wie Bestellnummer, Kundennummer, Stornierung, Rückrufnummer, SecureCloud."
+            )
+
+        hints = self.transcription_phrase_hints
+        if not base_prompt and not hints:
+            return None
+
+        if hints:
+            hint_list = ", ".join(hints[:25])
+            hint_suffix = f" Relevante Begriffe: {hint_list}."
+        else:
+            hint_suffix = ""
+
+        composed = f"{base_prompt}{hint_suffix}" if base_prompt else hint_suffix
+        return composed.strip() if composed else None
 
     @property
     def recordings_path(self) -> Path:
