@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Bot, BarChart3, Phone, Settings, X } from 'lucide-react';
+import { Bot, BarChart3, Phone, Settings, X, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface SidebarProps {
@@ -13,22 +13,27 @@ interface SidebarProps {
 
 const navigation = [
   {
+    name: 'Startseite',
+    href: '/',
+    icon: Home,
+    active: true,
+  },
+  {
     name: 'Assistant',
     href: '/assistant',
     icon: Bot,
     active: true,
   },
   {
-    name: 'Telefonnummern',
-    href: '/phone-numbers',
-    icon: Phone,
-    active: false,
-    disabled: true,
-  },
-  {
     name: 'Analytics',
     href: '/analytics',
     icon: BarChart3,
+    active: true,
+  },
+  {
+    name: 'Telefonnummern',
+    href: '/phone-numbers',
+    icon: Phone,
     active: false,
     disabled: true,
   },
