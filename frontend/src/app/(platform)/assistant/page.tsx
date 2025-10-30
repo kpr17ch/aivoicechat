@@ -250,7 +250,7 @@ export default function AssistantPage() {
                 value={instructions}
                 onChange={(e) => handleInstructionsChange(e.target.value)}
                 rows={8}
-                className="font-mono text-sm"
+                className="font-mono text-sm max-h-96 overflow-y-auto resize-none"
               />
             </div>
           </CardContent>

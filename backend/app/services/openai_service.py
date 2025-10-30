@@ -31,6 +31,7 @@ async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: s
     voice = settings.get('voice', 'sage')
     instructions = settings.get('system_instructions', 'Du bist ein hilfreicher KI-Assistent.')
     greeting_message = settings.get('greeting_message')
+    transcription_model = app_settings.openai_transcription_model
 
     if app_settings.enable_email_tool:
         instructions += "\n\nWenn der Nutzer eine E-Mail senden möchte, extrahiere Empfänger, Betreff und Inhalt aus der Anfrage und rufe send_email auf. Wenn Informationen fehlen (z.B. nur 'Schick eine E-Mail'), frage gezielt nach den fehlenden Feldern. Nach erfolgreichem Versand bestätige kurz: 'E-Mail an [Empfänger] wurde versendet.'"
@@ -91,6 +92,8 @@ async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: s
                 "tool_choice": "auto"
             }
         }
+        if transcription_model:
+            session_update["session"]["input_audio_transcription"] = {"model": transcription_model}
     else:
         session_update = {
             "type": "session.update",
@@ -114,12 +117,15 @@ async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: s
                 "tool_choice": "auto"
             }
         }
+        if transcription_model:
+            session_update["session"]["audio"]["input"]["transcription"] = {"model": transcription_model}
 
     log_event("Session Configuration Sent", {
         "model": session_update['session'].get('model', 'N/A'),
         "voice": voice,
         "temperature": temperature,
-        "audio_format": session_update['session'].get('output_audio_format', session_update['session'].get('audio', {}).get('output', {}).get('format', 'N/A'))
+        "audio_format": session_update['session'].get('output_audio_format', session_update['session'].get('audio', {}).get('output', {}).get('format', 'N/A')),
+        "transcription_model": transcription_model or "disabled"
     }, "SUCCESS")
 
     await openai_ws.send(json.dumps(session_update))

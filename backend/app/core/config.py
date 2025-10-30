@@ -36,9 +36,11 @@ class Settings(BaseSettings):
     openai_realtime_url: str = "https://api.openai.com/v1/realtime?model=gpt-realtime-mini"
     openai_realtime_model: str = "gpt-realtime-mini"
     temperature: float = 0.8
+    openai_transcription_model: str | None = "whisper-1"
 
     enable_audio_recording: bool = False
     recordings_dir: str = "recordings"
+    transcripts_dir: str = "transcripts"
     port: int = 8000
 
     gmail_email: str = "kaiperich@gmail.com"
