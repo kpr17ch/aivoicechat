@@ -25,16 +25,50 @@ async def send_initial_conversation_item(openai_ws, greeting_message: str | None
 
 
 async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: str, temperature: float):
+    from app.core.config import get_settings
+    app_settings = get_settings()
+    
     voice = settings.get('voice', 'sage')
     instructions = settings.get('system_instructions', 'Du bist ein hilfreicher KI-Assistent.')
     greeting_message = settings.get('greeting_message')
+
+    if app_settings.enable_email_tool:
+        instructions += "\n\nWenn der Nutzer eine E-Mail senden möchte, extrahiere Empfänger, Betreff und Inhalt aus der Anfrage und rufe send_email auf. Wenn Informationen fehlen (z.B. nur 'Schick eine E-Mail'), frage gezielt nach den fehlenden Feldern. Nach erfolgreichem Versand bestätige kurz: 'E-Mail an [Empfänger] wurde versendet.'"
+
+    tools = []
+    if app_settings.enable_email_tool:
+        tools.append({
+            "type": "function",
+            "name": "send_email",
+            "description": "Send an email on behalf of the user. Use this when the user explicitly asks to send an email.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Recipient email address"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Email subject line"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Plain text email body content"
+                    }
+                },
+                "required": ["to", "subject", "body"],
+                "additionalProperties": False
+            }
+        })
 
     log_event("OpenAI Session Initialization", {
         "voice": voice,
         "instructions": instructions[:100] + "...",
         "greeting": greeting_message or "None",
         "temperature": temperature,
-        "is_azure": is_azure
+        "is_azure": is_azure,
+        "tools_enabled": len(tools) > 0
     })
 
     if is_azure:
@@ -52,7 +86,9 @@ async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: s
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 200
                 },
-                "temperature": temperature
+                "temperature": temperature,
+                "tools": tools,
+                "tool_choice": "auto"
             }
         }
     else:
@@ -74,6 +110,8 @@ async def initialize_session(openai_ws, is_azure: bool, settings: dict, model: s
                 },
                 "instructions": instructions,
                 "temperature": temperature,
+                "tools": tools,
+                "tool_choice": "auto"
             }
         }
 

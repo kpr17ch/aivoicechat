@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     recordings_dir: str = "recordings"
     port: int = 8000
 
+    gmail_email: str = "kaiperich@gmail.com"
+    gmail_app_password: str | None = None
+    enable_email_tool: bool = True
+
     model_config = SettingsConfigDict(
         env_file=(
             str(REPO_ROOT / ".env"),

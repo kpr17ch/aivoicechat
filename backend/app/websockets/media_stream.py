@@ -151,6 +151,16 @@ async def handle_media_stream(websocket: WebSocket):
 
         async def send_to_twilio():
             nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, conversation_stats
+            
+            from app.services.email_service import EmailService
+            
+            email_service = None
+            if settings.enable_email_tool:
+                email_service = EmailService(
+                    gmail_email=settings.gmail_email,
+                    gmail_app_password=settings.gmail_app_password
+                )
+            
             try:
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
@@ -251,6 +261,57 @@ async def handle_media_stream(websocket: WebSocket):
                                 }, "DEBUG")
 
                         await send_mark(websocket, stream_sid)
+
+                    if response.get("type") == "response.function_call_arguments.done":
+                        call_id = response.get("call_id")
+                        function_name = response.get("name")
+                        arguments_str = response.get("arguments", "{}")
+                        
+                        if function_name == "send_email" and email_service:
+                            try:
+                                args = json.loads(arguments_str)
+                                
+                                to = args.get("to", "").strip()
+                                subject = args.get("subject", "").strip()
+                                body = args.get("body", "").strip()
+                                
+                                log_event("Email Tool Call", {
+                                    "to": to,
+                                    "subject": subject,
+                                    "body_length": len(body)
+                                }, "INFO")
+                                
+                                result = email_service.send_email(to, subject, body)
+                                
+                                if result["status"] == "sent":
+                                    log_event("Email Sent", result, "SUCCESS")
+                                    output = json.dumps({"success": True, "message": f"E-Mail erfolgreich an {to} versendet"})
+                                else:
+                                    log_event("Email Error", result, "ERROR")
+                                    output = json.dumps({"success": False, "error": result.get("error", "Unbekannter Fehler")})
+                                
+                                await openai_ws.send(json.dumps({
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": output
+                                    }
+                                }))
+                                
+                                await openai_ws.send(json.dumps({"type": "response.create"}))
+                                
+                            except Exception as e:
+                                log_event("Email Tool Error", {"error": str(e)}, "ERROR")
+                                await openai_ws.send(json.dumps({
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": json.dumps({"success": False, "error": str(e)})
+                                    }
+                                }))
+                                await openai_ws.send(json.dumps({"type": "response.create"}))
 
                     if response.get('type') == 'input_audio_buffer.speech_started':
                         log_event("User Speech Started", {

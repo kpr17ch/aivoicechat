@@ -2,7 +2,8 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: voice-assistant-backend
+      dockerfile: Dockerfile.dev
+    container_name: backend
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set in .env}
       OPENAI_REALTIME_URL: ${OPENAI_REALTIME_URL:-https://api.openai.com/v1/realtime?model=gpt-realtime-mini}
@@ -19,18 +20,25 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: voice-assistant-frontend
+      dockerfile: Dockerfile.dev
+    container_name: frontend
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://backend:8000/api/v1
-      NEXT_PUBLIC_WEB_SOCKET_URL: ws://backend:8000/ws
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_WEB_SOCKET_URL: ws://localhost:8000/ws
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3000:3000"
     depends_on:
       - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
   postgres:
     image: postgres:16-alpine
-    container_name: voice-assistant-postgres
+    container_name: postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

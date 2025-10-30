@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { PlatformLayout } from "@/components/layout/platform-layout";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geistMono = {
+  variable: "--font-mono",
+};
 
 export const metadata: Metadata = {
-  title: "AI Voice Assistant - Configuration",
-  description: "Konfiguriere deinen AI Voice Assistant",
+  title: "Telo AI - Voice Assistant Platform",
+  description: "Erstelle und verwalte KI-gestützte Voice Assistants",
 };
 
 export default function RootLayout({
@@ -24,11 +25,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="de">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${geistMono.variable} antialiased font-sans`}
       >
-        {children}
+        <PlatformLayout>{children}</PlatformLayout>
         <Toaster />
       </body>
     </html>

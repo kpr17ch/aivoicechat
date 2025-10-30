@@ -6,15 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  getAssistantSettings, 
-  updateAssistantSettings, 
-  getInstructionTemplates, 
-  getAvailableVoices 
+import {
+  getAssistantSettings,
+  updateAssistantSettings,
+  getInstructionTemplates,
+  getAvailableVoices
 } from '@/lib/api';
 import type { AssistantSettings, InstructionTemplate, Voice } from '@/types/assistant';
 
@@ -22,14 +21,15 @@ export default function AssistantPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
+
   const [settings, setSettings] = useState<AssistantSettings | null>(null);
   const [templates, setTemplates] = useState<InstructionTemplate[]>([]);
   const [voices, setVoices] = useState<Voice[]>([]);
-  
+
   const [selectedVoice, setSelectedVoice] = useState('sage');
   const [selectedTemplate, setSelectedTemplate] = useState('allgemein');
   const [instructions, setInstructions] = useState('');
+  const [templateInstructions, setTemplateInstructions] = useState<Record<string, string>>({});
   const [useGreeting, setUseGreeting] = useState(false);
   const [greetingMessage, setGreetingMessage] = useState('');
 
@@ -53,6 +53,17 @@ export default function AssistantPage() {
       setSelectedVoice(settingsData.voice);
       setSelectedTemplate(settingsData.template_name);
       setInstructions(settingsData.system_instructions);
+
+      const initialTemplateState: Record<string, string> = {};
+      templatesData.forEach((template) => {
+        if (template.name === settingsData.template_name) {
+          initialTemplateState[template.name] = settingsData.system_instructions;
+        } else {
+          initialTemplateState[template.name] = template.default_instructions;
+        }
+      });
+      setTemplateInstructions(initialTemplateState);
+
       setUseGreeting(!!settingsData.greeting_message);
       setGreetingMessage(settingsData.greeting_message || '');
     } catch (error) {
@@ -68,17 +79,40 @@ export default function AssistantPage() {
   };
 
   const handleTemplateChange = (templateName: string) => {
+    setTemplateInstructions((prev) => ({
+      ...prev,
+      [selectedTemplate]: instructions,
+    }));
+
     setSelectedTemplate(templateName);
-    const template = templates.find((t) => t.name === templateName);
-    if (template) {
-      setInstructions(template.default_instructions);
+    const savedInstructions = templateInstructions[templateName];
+    if (savedInstructions) {
+      setInstructions(savedInstructions);
+    } else {
+      const template = templates.find((t) => t.name === templateName);
+      if (template) {
+        setInstructions(template.default_instructions);
+      }
     }
+  };
+
+  const handleInstructionsChange = (value: string) => {
+    setInstructions(value);
+    setTemplateInstructions((prev) => ({
+      ...prev,
+      [selectedTemplate]: value,
+    }));
   };
 
   const handleResetToTemplate = () => {
     const template = templates.find((t) => t.name === selectedTemplate);
     if (template) {
-      setInstructions(template.default_instructions);
+      const defaultInstructions = template.default_instructions;
+      setInstructions(defaultInstructions);
+      setTemplateInstructions((prev) => ({
+        ...prev,
+        [selectedTemplate]: defaultInstructions,
+      }));
       toast({
         title: 'Zurückgesetzt',
         description: 'Instructions wurden auf das Template zurückgesetzt.',
@@ -116,17 +150,15 @@ export default function AssistantPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center h-96">
-          <p className="text-muted-foreground">Lade Einstellungen...</p>
-        </div>
+      <div className="flex items-center justify-center h-96">
+        <p className="text-muted-foreground">Lade Einstellungen...</p>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-8">
+    <div className="space-y-6">
+      <div>
         <h1 className="text-3xl font-bold mb-2">Assistant Konfiguration</h1>
         <p className="text-muted-foreground">
           Passe deinen Voice Assistant an deine Bedürfnisse an.
@@ -174,46 +206,49 @@ export default function AssistantPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Template</Label>
-              <Tabs value={selectedTemplate} onValueChange={handleTemplateChange}>
-                <TabsList className="grid w-full grid-cols-4">
-                  {templates.map((template) => (
-                    <TabsTrigger key={template.name} value={template.name}>
-                      {template.name.charAt(0).toUpperCase() + template.name.slice(1)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                {templates.map((template) => (
-                  <TabsContent key={template.name} value={template.name} className="mt-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{template.category}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {template.description}
-                      </p>
-                    </div>
-                  </TabsContent>
-                ))}
-              </Tabs>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="instructions">Instructions</Label>
+              <Label htmlFor="template">Template</Label>
+              <div className="flex gap-2">
+                <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
+                  <SelectTrigger id="template">
+                    <SelectValue placeholder="Template auswählen">
+                      {selectedTemplate && (
+                        <span>
+                          {selectedTemplate.charAt(0).toUpperCase() + selectedTemplate.slice(1)}
+                        </span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((template) => (
+                      <SelectItem key={template.name} value={template.name}>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium">
+                            {template.name.charAt(0).toUpperCase() + template.name.slice(1)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {template.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   variant="outline"
-                  size="sm"
                   onClick={handleResetToTemplate}
                   type="button"
                 >
-                  Auf Template zurücksetzen
+                  Zurücksetzen
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="instructions">Instructions</Label>
               <Textarea
                 id="instructions"
                 value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
+                onChange={(e) => handleInstructionsChange(e.target.value)}
                 rows={8}
                 className="font-mono text-sm"
               />

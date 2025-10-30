@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+
+ARG NODE_VERSION=20-alpine
+
+FROM node:${NODE_VERSION}
+
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=development
+
+COPY package.json package-lock.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
