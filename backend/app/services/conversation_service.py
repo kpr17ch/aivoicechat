@@ -124,17 +124,26 @@ async def upsert_conversation_snapshot(
 
 
 async def list_conversations(
-    *, limit: int = 20, offset: int = 0
+    *, limit: int = 20, offset: int = 0, only_completed: bool = True
 ) -> tuple[list[ConversationSession], int]:
-    """Return paginated conversations ordered by newest first."""
+    """Return paginated conversations ordered by newest first.
+    
+    If only_completed is True, only returns conversations with state 'completed', 'ended', or 'connection_closed'.
+    """
 
     async with AsyncSessionMaker() as session:
-        total_stmt = select(func.count()).select_from(ConversationSession)
+        base_query = select(ConversationSession)
+        if only_completed:
+            base_query = base_query.where(
+                ConversationSession.state.in_(["completed", "ended", "connection_closed"])
+            )
+        
+        total_stmt = select(func.count()).select_from(base_query.subquery())
         total_result = await session.execute(total_stmt)
         total = int(total_result.scalar() or 0)
 
         stmt = (
-            select(ConversationSession)
+            base_query
             .order_by(ConversationSession.started_at.desc(), ConversationSession.id.desc())
             .offset(offset)
             .limit(limit)

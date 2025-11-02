@@ -111,8 +111,9 @@ def _safe_filename(value: str | None, fallback: str) -> str:
 async def list_conversation_summaries(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    only_completed: bool = Query(True, description="Only return completed conversations"),
 ) -> ConversationListResponse:
-    items, total = await list_conversations(limit=limit, offset=offset)
+    items, total = await list_conversations(limit=limit, offset=offset, only_completed=only_completed)
     summaries = [_to_summary(item) for item in items]
     return ConversationListResponse(total=total, items=summaries)
 

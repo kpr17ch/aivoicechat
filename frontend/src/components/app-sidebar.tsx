@@ -44,7 +44,7 @@ const navigation = [
   },
   {
     name: 'Gespräche',
-    href: '/analytics/conversations',
+    href: '/conversations',
     icon: MessageSquareText,
     disabled: false,
   },

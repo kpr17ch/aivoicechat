@@ -46,6 +46,7 @@ export async function getAvailableVoices(): Promise<Voice[]> {
 export interface ConversationListQuery {
   limit?: number;
   offset?: number;
+  only_completed?: boolean;
 }
 
 export async function getConversationSummaries(
@@ -57,6 +58,9 @@ export async function getConversationSummaries(
   }
   if (typeof params.offset === 'number') {
     search.set('offset', String(params.offset));
+  }
+  if (typeof params.only_completed === 'boolean') {
+    search.set('only_completed', String(params.only_completed));
   }
 
   const query = search.toString();

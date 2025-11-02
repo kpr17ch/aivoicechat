@@ -76,7 +76,13 @@ export function transformConversationList(
 
 export type { ConversationDetail };
 
-export async function fetchConversationListView(): Promise<ConversationsListView> {
-  const response = await getConversationSummaries();
+export async function fetchConversationListView(
+  options?: { page?: number; limit?: number }
+): Promise<ConversationsListView> {
+  const page = Math.max(1, options?.page ?? 1);
+  const limit = Math.min(100, Math.max(1, options?.limit ?? 20));
+  const offset = (page - 1) * limit;
+  
+  const response = await getConversationSummaries({ limit, offset, only_completed: true });
   return transformConversationList(response);
 }
