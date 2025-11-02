@@ -67,7 +67,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b border-black/15 p-4">
+      <SidebarHeader className="p-4">
         <div className="flex items-center">
           <Image
             src="/logo.png"
@@ -75,7 +75,7 @@ export function AppSidebar() {
             width={155}
             height={50}
             priority
-            className="h-10 w-auto"
+            className="h-8 w-auto"
           />
         </div>
       </SidebarHeader>
