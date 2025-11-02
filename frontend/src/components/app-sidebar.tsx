@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { Bot, Phone, BarChart3, Settings, User, Home } from 'lucide-react';
+import { Bot, Phone, BarChart3, Settings, User, Home, MessageSquareText } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -43,6 +43,12 @@ const navigation = [
     disabled: false,
   },
   {
+    name: 'Gespräche',
+    href: '/analytics/conversations',
+    icon: MessageSquareText,
+    disabled: false,
+  },
+  {
     name: 'Telefonnummern',
     href: '/phone-numbers',
     icon: Phone,
@@ -61,7 +67,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b p-4">
+      <SidebarHeader className="border-b border-border/60 p-4">
         <div className="flex items-center">
           <Image
             src="/logo.png"
