@@ -67,7 +67,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b border-border/60 p-4">
+      <SidebarHeader className="border-b border-black/15 p-4">
         <div className="flex items-center">
           <Image
             src="/logo.png"
