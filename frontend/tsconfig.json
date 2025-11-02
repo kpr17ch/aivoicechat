@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "../archive/sidebar.tsx"  ],
   "exclude": ["node_modules"]
 }

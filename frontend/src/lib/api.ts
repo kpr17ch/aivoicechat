@@ -1,4 +1,8 @@
 import { AssistantSettings, AssistantSettingsUpdate, InstructionTemplate, Voice } from '@/types/assistant';
+import {
+  ConversationDetail,
+  ConversationListResponse,
+} from '@/types/conversations';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -39,3 +43,31 @@ export async function getAvailableVoices(): Promise<Voice[]> {
   return fetchAPI<Voice[]>('/assistant/voices');
 }
 
+export interface ConversationListQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export async function getConversationSummaries(
+  params: ConversationListQuery = {}
+): Promise<ConversationListResponse> {
+  const search = new URLSearchParams();
+  if (typeof params.limit === 'number') {
+    search.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    search.set('offset', String(params.offset));
+  }
+
+  const query = search.toString();
+  const endpoint = query ? `/conversations?${query}` : '/conversations';
+  return fetchAPI<ConversationListResponse>(endpoint, { cache: 'no-store' });
+}
+
+export async function getConversationDetail(
+  conversationId: number
+): Promise<ConversationDetail> {
+  return fetchAPI<ConversationDetail>(`/conversations/${conversationId}`, {
+    cache: 'no-store',
+  });
+}

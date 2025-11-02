@@ -75,7 +75,7 @@ export function AppSidebar() {
             width={155}
             height={50}
             priority
-            className="h-8 w-auto"
+            className="h-9 w-auto"
           />
         </div>
       </SidebarHeader>
