@@ -88,176 +88,178 @@ function truncateText(text: string | null, maxLength: number = 50): string {
   return text.substring(0, maxLength) + '...';
 }
 
-const columns: ColumnDef<ConversationSummaryView>[] = [
-  {
-    id: 'select',
-    header: ({ table }) => (
-      <div className="flex items-center justify-center">
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && 'indeterminate')
-          }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Alle auswählen"
-        />
-      </div>
-    ),
-    cell: ({ row }) => (
-      <div className="flex items-center justify-center">
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Zeile auswählen"
-        />
-      </div>
-    ),
-    enableSorting: false,
-    enableHiding: false,
-  },
-  {
-    accessorKey: 'id',
-    header: 'ID',
-    cell: ({ row }) => {
-      return (
-        <Button
-          variant="link"
-          className="text-foreground h-auto w-fit px-0 text-left font-mono text-sm"
-          onClick={() => {
-            toast.info(`Detailansicht für Gespräch ${row.original.id} wird später implementiert`);
-          }}
-        >
-          {row.original.id}
-        </Button>
-      );
-    },
-  },
-  {
-    accessorKey: 'startedAt',
-    header: 'Start',
-    cell: ({ row }) => {
-      return <div className="text-sm">{formatDateTime(row.original.startedAt)}</div>;
-    },
-  },
-  {
-    accessorKey: 'endedAt',
-    header: 'Ende',
-    cell: ({ row }) => {
-      return <div className="text-sm">{formatDateTime(row.original.endedAt)}</div>;
-    },
-  },
-  {
-    accessorKey: 'durationSeconds',
-    header: 'Dauer',
-    cell: ({ row }) => {
-      return <div className="text-sm font-mono">{formatDuration(row.original.durationSeconds)}</div>;
-    },
-  },
-  {
-    accessorKey: 'turnCount',
-    header: 'Züge',
-    cell: ({ row }) => {
-      return <div className="text-sm">{row.original.turnCount}</div>;
-    },
-  },
-  {
-    accessorKey: 'userPhone',
-    header: 'Telefon',
-    cell: ({ row }) => {
-      return (
-        <div className="text-sm font-mono">{row.original.userPhone || '-'}</div>
-      );
-    },
-  },
-  {
-    accessorKey: 'latestUserText',
-    header: 'Letzter Nutzer',
-    cell: ({ row }) => {
-      return (
-        <div className="max-w-xs truncate text-sm" title={row.original.latestUserText || undefined}>
-          {truncateText(row.original.latestUserText, 50)}
+function createColumns(router: ReturnType<typeof useRouter>): ColumnDef<ConversationSummaryView>[] {
+  return [
+    {
+      id: 'select',
+      header: ({ table }) => (
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && 'indeterminate')
+            }
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label="Alle auswählen"
+          />
         </div>
-      );
-    },
-  },
-  {
-    accessorKey: 'latestAssistantText',
-    header: 'Letzter Assistant',
-    cell: ({ row }) => {
-      return (
-        <div className="max-w-xs truncate text-sm" title={row.original.latestAssistantText || undefined}>
-          {truncateText(row.original.latestAssistantText, 50)}
+      ),
+      cell: ({ row }) => (
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label="Zeile auswählen"
+          />
         </div>
-      );
+      ),
+      enableSorting: false,
+      enableHiding: false,
     },
-  },
-  {
-    accessorKey: 'transcriptAvailable',
-    header: 'Transcript',
-    cell: ({ row }) => {
-      return row.original.transcriptAvailable ? (
-        <Badge variant="outline" className="text-muted-foreground px-1.5">
-          <IconFileText className="mr-1 size-3" />
-          Verfügbar
-        </Badge>
-      ) : (
-        <span className="text-muted-foreground text-sm">-</span>
-      );
+    {
+      accessorKey: 'id',
+      header: 'ID',
+      cell: ({ row }) => {
+        return (
+          <Button
+            variant="link"
+            className="text-foreground h-auto w-fit px-0 text-left font-mono text-sm"
+            onClick={() => {
+              router.push(`/conversations/${row.original.id}`);
+            }}
+          >
+            {row.original.id}
+          </Button>
+        );
+      },
     },
-  },
-  {
-    id: 'actions',
-    cell: ({ row }) => {
-      const conversation = row.original;
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="data-[state=open]:bg-muted text-muted-foreground flex size-8"
-              size="icon"
-            >
-              <IconDotsVertical />
-              <span className="sr-only">Menü öffnen</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {conversation.transcriptAvailable && (
-              <>
-                <DropdownMenuItem
-                  onClick={() => {
-                    const url = buildConversationDownloadUrl(conversation.id, 'json');
-                    window.open(url, '_blank');
-                  }}
-                >
-                  <IconFileCode className="mr-2 size-4" />
-                  JSON herunterladen
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    const url = buildConversationDownloadUrl(conversation.id, 'txt');
-                    window.open(url, '_blank');
-                  }}
-                >
-                  <IconFileText className="mr-2 size-4" />
-                  TXT herunterladen
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )}
-            <DropdownMenuItem
-              onClick={() => {
-                toast.info(`Detailansicht für Gespräch ${conversation.id} wird später implementiert`);
-              }}
-            >
-              Details anzeigen
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
+    {
+      accessorKey: 'startedAt',
+      header: 'Start',
+      cell: ({ row }) => {
+        return <div className="text-sm">{formatDateTime(row.original.startedAt)}</div>;
+      },
     },
-  },
-];
+    {
+      accessorKey: 'endedAt',
+      header: 'Ende',
+      cell: ({ row }) => {
+        return <div className="text-sm">{formatDateTime(row.original.endedAt)}</div>;
+      },
+    },
+    {
+      accessorKey: 'durationSeconds',
+      header: 'Dauer',
+      cell: ({ row }) => {
+        return <div className="text-sm font-mono">{formatDuration(row.original.durationSeconds)}</div>;
+      },
+    },
+    {
+      accessorKey: 'turnCount',
+      header: 'Züge',
+      cell: ({ row }) => {
+        return <div className="text-sm">{row.original.turnCount}</div>;
+      },
+    },
+    {
+      accessorKey: 'userPhone',
+      header: 'Telefon',
+      cell: ({ row }) => {
+        return (
+          <div className="text-sm font-mono">{row.original.userPhone || '-'}</div>
+        );
+      },
+    },
+    {
+      accessorKey: 'latestUserText',
+      header: 'Letzter Nutzer',
+      cell: ({ row }) => {
+        return (
+          <div className="max-w-xs truncate text-sm" title={row.original.latestUserText || undefined}>
+            {truncateText(row.original.latestUserText, 50)}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'latestAssistantText',
+      header: 'Letzter Assistant',
+      cell: ({ row }) => {
+        return (
+          <div className="max-w-xs truncate text-sm" title={row.original.latestAssistantText || undefined}>
+            {truncateText(row.original.latestAssistantText, 50)}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'transcriptAvailable',
+      header: 'Transcript',
+      cell: ({ row }) => {
+        return row.original.transcriptAvailable ? (
+          <Badge variant="outline" className="text-muted-foreground px-1.5">
+            <IconFileText className="mr-1 size-3" />
+            Verfügbar
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground text-sm">-</span>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      cell: ({ row }) => {
+        const conversation = row.original;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="data-[state=open]:bg-muted text-muted-foreground flex size-8"
+                size="icon"
+              >
+                <IconDotsVertical />
+                <span className="sr-only">Menü öffnen</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {conversation.transcriptAvailable && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const url = buildConversationDownloadUrl(conversation.id, 'json');
+                      window.open(url, '_blank');
+                    }}
+                  >
+                    <IconFileCode className="mr-2 size-4" />
+                    JSON herunterladen
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const url = buildConversationDownloadUrl(conversation.id, 'txt');
+                      window.open(url, '_blank');
+                    }}
+                  >
+                    <IconFileText className="mr-2 size-4" />
+                    TXT herunterladen
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                onClick={() => {
+                  router.push(`/conversations/${conversation.id}`);
+                }}
+              >
+                Details anzeigen
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+}
 
 interface ConversationsTableProps {
   initial: ConversationsListView;
@@ -275,6 +277,7 @@ export function ConversationsTable({ initial, page, limit }: ConversationsTableP
   const [globalFilter, setGlobalFilter] = React.useState('');
 
   const totalPages = Math.max(1, Math.ceil(initial.total / limit));
+  const columns = React.useMemo(() => createColumns(router), [router]);
 
   const table = useReactTable({
     data,

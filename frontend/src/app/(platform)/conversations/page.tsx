@@ -11,10 +11,11 @@ export const metadata: Metadata = {
 export default async function ConversationsPage({
   searchParams,
 }: {
-  searchParams?: { page?: string; limit?: string };
+  searchParams?: Promise<{ page?: string; limit?: string }>;
 }) {
-  const page = Math.max(1, Number(searchParams?.page ?? 1));
-  const limit = Math.min(100, Math.max(1, Number(searchParams?.limit ?? 20)));
+  const resolvedSearchParams = await searchParams;
+  const page = Math.max(1, Number(resolvedSearchParams?.page ?? 1));
+  const limit = Math.min(100, Math.max(1, Number(resolvedSearchParams?.limit ?? 20)));
   
   const list = await fetchConversationListView({ page, limit });
 
